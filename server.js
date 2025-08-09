@@ -12,7 +12,7 @@ const server = http.createServer(app);
 // --- Socket.IO with CORS enabled ---
 const io = socketIo(server, {
     cors: {
-        origin: "*", // Change "*" to your client URL for production security
+        origin: "https://dropkickarcade.com", // Change "*" to your client URL for production security
         methods: ["GET", "POST"]
     }
 });
