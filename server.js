@@ -12,7 +12,7 @@ const server = http.createServer(app);
 // --- Socket.IO with CORS enabled ---
 const io = socketIo(server, {
     cors: {
-        origin: "https://dropkickarcade.com", // Change "*" to your client URL for production security
+        origin: "https://dropkickarcade.com", // Client domain
         methods: ["GET", "POST"]
     }
 });
@@ -38,7 +38,7 @@ app.use(express.static(path.join(__dirname, 'public')));
 
 // --- Game Logic ---
 function startGame() {
-    console.log("Starting new game...");
+    console.log("[GAME] Starting new game...");
     gameInProgress = true;
     gameTimer = 60;
     treasures = [];
@@ -55,6 +55,7 @@ function startGame() {
 
     countdownInterval = setInterval(() => {
         gameTimer--;
+        console.log(`[TIMER] ${gameTimer}s remaining`);
         if (gameTimer <= 0) {
             endGame();
         }
@@ -62,7 +63,7 @@ function startGame() {
 }
 
 function endGame() {
-    console.log("Game Over!");
+    console.log("[GAME] Game Over!");
     gameInProgress = false;
     clearInterval(gameLoopInterval);
     clearInterval(treasureSpawnInterval);
@@ -77,6 +78,8 @@ function endGame() {
             winner = players[id];
         }
     }
+
+    console.log(`[RESULT] Winner: ${winner ? winner.name : 'No one'} | Score: ${highScore}`);
 
     io.emit('gameOver', winner ? { name: winner.name, score: winner.score } : { name: 'No one', score: 0 });
 
@@ -104,6 +107,7 @@ function spawnTreasure() {
         z: (Math.random() - 0.5) * GAME_AREA_HEIGHT,
     };
     treasures.push(treasure);
+    console.log(`[SPAWN] Treasure spawned at x:${treasure.x.toFixed(2)}, z:${treasure.z.toFixed(2)}`);
 }
 
 function getLeaderboard() {
@@ -124,6 +128,7 @@ function gameLoop() {
             );
             if (distance < 1.5) {
                 player.score += 1;
+                console.log(`[COLLECT] ${player.name} collected treasure ${treasure.id} | Score: ${player.score}`);
                 treasures.splice(index, 1);
             }
         });
@@ -136,14 +141,16 @@ function gameLoop() {
         gameTimer,
         leaderboard: getLeaderboard()
     });
+
+    console.log(`[BROADCAST] Sent gameState | Players: ${Object.keys(players).length} | Treasures: ${treasures.length}`);
 }
 
 // --- Socket.IO events ---
 io.on('connection', (socket) => {
-    console.log(`Player connected: ${socket.id}`);
+    console.log(`[CONNECT] Player connected: ${socket.id}`);
 
     socket.on('joinGame', (playerName) => {
-        console.log(`Player ${socket.id} joined as ${playerName}`);
+        console.log(`[JOIN] Player ${socket.id} joined as "${playerName}"`);
         players[socket.id] = {
             id: socket.id,
             name: playerName || 'Player ' + Math.floor(Math.random() * 1000),
@@ -157,10 +164,17 @@ io.on('connection', (socket) => {
             startGame();
         }
 
+        const gameState = { players, treasures, gameTimer, leaderboard: getLeaderboard() };
+
+        // Send confirmation + immediate state
         socket.emit('gameJoined', {
             id: socket.id,
-            gameState: { players, treasures, gameTimer, leaderboard: getLeaderboard() }
+            gameState
         });
+        console.log(`[SEND] Initial gameState sent to ${socket.id}`);
+
+        // Send first gameState immediately so cubes appear without delay
+        socket.emit('gameState', gameState);
     });
 
     socket.on('move', (position) => {
@@ -169,14 +183,15 @@ io.on('connection', (socket) => {
             player.x = position.x;
             player.y = position.y;
             player.z = position.z;
+            console.log(`[MOVE] ${player.name} -> x:${player.x.toFixed(2)}, z:${player.z.toFixed(2)}`);
         }
     });
 
     socket.on('disconnect', () => {
-        console.log(`Player disconnected: ${socket.id}`);
+        console.log(`[DISCONNECT] Player disconnected: ${socket.id}`);
         delete players[socket.id];
         if (Object.keys(players).length === 0) {
-            console.log("Last player left. Stopping game.");
+            console.log("[GAME] Last player left. Stopping game.");
             gameInProgress = false;
             clearInterval(gameLoopInterval);
             clearInterval(treasureSpawnInterval);
@@ -188,6 +203,6 @@ io.on('connection', (socket) => {
 
 // --- Start server ---
 server.listen(PORT, () => {
-    console.log(`Server listening on port ${PORT}`);
+    console.log(`[START] Server listening on port ${PORT}`);
     console.log(`Serving static files from /public`);
 });
